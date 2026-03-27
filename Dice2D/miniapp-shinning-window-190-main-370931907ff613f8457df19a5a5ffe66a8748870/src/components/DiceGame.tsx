@@ -347,7 +347,10 @@ export function DiceGame() {
           <p className="mb-2">Each roll costs 0.01 USDC and is processed via x402</p>
           <p>Roll 3 or higher to reveal tiles, lower to hide them</p>
         </motion.div>
-type DiceValue = 1 | 2 | 3 | 4 | 5 | 6;
+      </div>
+    </div>
+  );
+}
 
 const PAYMENT_AMOUNT = '0.01';
 const TOTAL_TILES = 6;
