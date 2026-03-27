@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Playfair_Display, Geist_Mono } from "next/font/google";
 import localFont from "next/font/local";
 import "@coinbase/onchainkit/styles.css";
 import "./globals.css";
@@ -8,14 +9,20 @@ import { ReadyNotifier } from "@/components/ready-notifier";
 import { Providers } from "./providers";
 import FarcasterWrapper from "@/components/FarcasterWrapper";
 
+const playfairDisplay = Playfair_Display({
+  subsets: ["latin"],
+  variable: "--font-playfair",
+  weight: ["400", "500", "600", "700", "800", "900"],
+});
+
+const geistMono = Geist_Mono({
+  subsets: ["latin"],
+  variable: "--font-geist-mono",
+});
+
 const geistSans = localFont({
   src: "./fonts/GeistVF.woff",
   variable: "--font-geist-sans",
-  weight: "100 900",
-});
-const geistMono = localFont({
-  src: "./fonts/GeistMonoVF.woff",
-  variable: "--font-geist-mono",
   weight: "100 900",
 });
 
@@ -32,7 +39,7 @@ export default async function RootLayout({
             {requestId && <meta name="x-request-id" content={requestId} />}
           </head>
           <body
-            className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+            className={`${playfairDisplay.variable} ${geistSans.variable} ${geistMono.variable} antialiased bg-background`}
           >
             {/* Do not remove this component, we use it to notify the parent that the mini-app is ready */}
             <ReadyNotifier />
