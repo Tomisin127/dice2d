@@ -2,19 +2,15 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useAccount, useSendTransaction, useWaitForTransactionReceipt } from 'wagmi';
-import { parseUnits } from 'viem';
+import { useAccount } from 'wagmi';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { buildSendTransaction, isApiError } from '@/app/types/api';
 import { Sparkles } from 'lucide-react';
 import { ConnectWallet } from '@coinbase/onchainkit/wallet';
 
 type DiceValue = 1 | 2 | 3 | 4 | 5 | 6;
 
-const USDC_ADDRESS = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913'; // USDC on Base
-const CREATOR_WALLET = '0xb3C18Ab6d6e1B3591a5F471649A89C84e99fbDb5'; // Your wallet
-const ROLL_COST = parseUnits('0.00001', 6); // 0.00001 USDC (6 decimals)
+const PAYMENT_AMOUNT = '0.01'; // 0.01 USDC per roll
 
 // Grid dimensions - 4x4 = 16 tiles
 const GRID_ROWS = 4;
@@ -33,13 +29,9 @@ export function DiceGame() {
   const [imageUrl, setImageUrl] = useState<string>('');
   const [isLoadingImage, setIsLoadingImage] = useState(true);
   const [showWinMessage, setShowWinMessage] = useState(false);
+  const [paymentError, setPaymentError] = useState<string>('');
 
   const rollIntervalRef = useRef<NodeJS.Timeout | null>(null);
-
-  const { data: hash, sendTransaction, isPending: isSending, error: sendError } = useSendTransaction();
-  const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({
-    hash,
-  });
 
   // Fetch random image on mount and when resetting
   const fetchRandomImage = useCallback(async () => {
@@ -129,44 +121,45 @@ export function DiceGame() {
     }
   }, []);
 
-  // Roll dice
+  // Roll dice with x402 payment
   const rollDice = useCallback(async () => {
-    if (!isConnected || isRolling || isSending || isConfirming) return;
+    if (!isConnected || isRolling) return;
 
     setIsRolling(true);
     setShowResult(false);
+    setPaymentError('');
     playSound('roll');
 
-    // Build transaction
-    const sendCall = buildSendTransaction({
-      recipientAddress: CREATOR_WALLET as `0x${string}`,
-      tokenAddress: USDC_ADDRESS as `0x${string}`,
-      amount: ROLL_COST,
-    });
-
-    if (isApiError(sendCall)) {
-      console.error('Failed to build transaction:', sendCall.message);
-      setIsRolling(false);
-      return;
-    }
-
-    // Send transaction
     try {
-      sendTransaction({
-        to: sendCall.to,
-        data: sendCall.data,
-        value: sendCall.value || 0n,
+      console.log('[v0] Starting x402 payment request');
+      
+      // Call x402 payment endpoint
+      const response = await fetch('/api/x402-payment', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          amount: PAYMENT_AMOUNT,
+          description: 'Dice2D Game Roll',
+        }),
       });
-    } catch (error) {
-      console.error('Transaction failed:', error);
-      setIsRolling(false);
-    }
-  }, [isConnected, isRolling, isSending, isConfirming, playSound, sendTransaction]);
 
-  // Handle transaction confirmation - FIX: Remove dependencies that cause re-renders
-  useEffect(() => {
-    if (isConfirmed && isRolling) {
-      // Animate dice roll
+      console.log('[v0] Payment response status:', response.status);
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.log('[v0] Payment failed:', errorData);
+        setPaymentError(errorData.message || 'Payment failed');
+        setIsRolling(false);
+        playSound('fail');
+        return;
+      }
+
+      const paymentData = await response.json();
+      console.log('[v0] Payment successful:', paymentData);
+
+      // Payment succeeded, animate dice roll
       let rollCount = 0;
       rollIntervalRef.current = setInterval(() => {
         setDiceValue((Math.floor(Math.random() * 6) + 1) as DiceValue);
@@ -217,14 +210,17 @@ export function DiceGame() {
           setIsRolling(false);
         }
       }, 100);
-
-      return () => {
-        if (rollIntervalRef.current) {
-          clearInterval(rollIntervalRef.current);
-        }
-      };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error('[v0] Payment request error:', errorMessage);
+      setPaymentError(`Payment error: ${errorMessage}`);
+      setIsRolling(false);
+      playSound('fail');
     }
-  }, [isConfirmed, isRolling, playSound]);
+  }, [isConnected, isRolling, playSound]);
+
+  // Remove the useEffect that watches for transaction confirmation
+  // since we now handle the dice animation directly in rollDice()
 
   const revealPercentage = Math.round((revealedTiles.size / TOTAL_TILES) * 100);
 
@@ -388,7 +384,6 @@ export function DiceGame() {
             )}
           </AnimatePresence>
 
-          {/* Wallet Connection / Roll Button */}
           {!isConnected ? (
             <div className="flex justify-center">
               <ConnectWallet />
@@ -396,21 +391,19 @@ export function DiceGame() {
           ) : (
             <Button
               onClick={rollDice}
-              disabled={isRolling || isSending || isConfirming || showWinMessage}
+              disabled={isRolling || showWinMessage}
               className="w-full h-14 text-lg font-bold bg-teal-600 hover:bg-teal-500 text-white"
             >
-              {isSending || isConfirming
-                ? '🎲 Processing...'
-                : isRolling
+              {isRolling
                 ? '🎲 Rolling...'
-                : '🎲 Roll Dice (0.00001 USDC)'}
+                : '🎲 Roll Dice (0.01 USDC)'}
             </Button>
           )}
 
-          {/* Transaction Error */}
-          {sendError && (
+          {/* Payment Error Message */}
+          {paymentError && (
             <p className="text-red-400 text-sm text-center">
-              Transaction failed: {sendError.message}
+              {paymentError}
             </p>
           )}
 

@@ -19,12 +19,12 @@ const geistMono = localFont({
   weight: "100 900",
 });
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const requestId = cookies().get("x-request-id")?.value;
+  const requestId = (await cookies()).get("x-request-id")?.value;
 
   return (
         <html lang="en">
