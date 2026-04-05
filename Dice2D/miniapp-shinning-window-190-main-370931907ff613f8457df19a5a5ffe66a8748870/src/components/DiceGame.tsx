@@ -13,12 +13,12 @@ import { toast } from 'sonner';
 
 type DiceValue = 1 | 2 | 3 | 4 | 5 | 6;
 
-const PAYMENT_AMOUNT = '0.01';
+const PAYMENT_AMOUNT = '0.00001';
 const TOTAL_TILES = 6;
 
 // USDC on Base
 const USDC_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' as const;
-const PAYMENT_RECEIVER = '0x742d35Cc6634C0532925a3b844Bc454e4438f44e' as const; // Replace with your address
+const PAYMENT_RECEIVER = '0xb3C18Ab6d6e1B3591a5F471649A89C84e99fbDb5' as const;
 
 const ERC20_ABI = [
   {
@@ -33,14 +33,14 @@ const ERC20_ABI = [
   },
 ] as const;
 
-// Dice face patterns
-const diceFaces: Record<DiceValue, { dots: number[][]; color: string }> = {
-  1: { dots: [[1, 1]], color: 'from-primary to-primary/80' },
-  2: { dots: [[0, 0], [2, 2]], color: 'from-primary/90 to-secondary/80' },
-  3: { dots: [[0, 0], [1, 1], [2, 2]], color: 'from-secondary/90 to-primary/80' },
-  4: { dots: [[0, 0], [0, 2], [2, 0], [2, 2]], color: 'from-secondary to-secondary/80' },
-  5: { dots: [[0, 0], [0, 2], [1, 1], [2, 0], [2, 2]], color: 'from-primary to-secondary' },
-  6: { dots: [[0, 0], [0, 1], [0, 2], [2, 0], [2, 1], [2, 2]], color: 'from-secondary to-primary' },
+// Dice face patterns - solid colors for mature look
+const diceFaces: Record<DiceValue, { dots: number[][]; bgClass: string }> = {
+  1: { dots: [[1, 1]], bgClass: 'bg-primary' },
+  2: { dots: [[0, 0], [2, 2]], bgClass: 'bg-primary' },
+  3: { dots: [[0, 0], [1, 1], [2, 2]], bgClass: 'bg-secondary' },
+  4: { dots: [[0, 0], [0, 2], [2, 0], [2, 2]], bgClass: 'bg-secondary' },
+  5: { dots: [[0, 0], [0, 2], [1, 1], [2, 0], [2, 2]], bgClass: 'bg-primary' },
+  6: { dots: [[0, 0], [0, 1], [0, 2], [2, 0], [2, 1], [2, 2]], bgClass: 'bg-secondary' },
 };
 
 export function DiceGame() {
@@ -229,28 +229,14 @@ export function DiceGame() {
 
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col relative overflow-hidden">
-      {/* Animated Background Grid */}
-      <div className="fixed inset-0 grid-pattern opacity-50" />
-      
-      {/* Ambient Glow Effects */}
-      <motion.div
-        className="fixed top-1/4 -left-32 w-64 h-64 rounded-full blur-[100px]"
-        style={{ background: 'hsl(170 100% 45% / 0.15)' }}
-        animate={{ x: [0, 50, 0], y: [0, 30, 0] }}
-        transition={{ duration: 15, repeat: Infinity, ease: 'easeInOut' }}
-      />
-      <motion.div
-        className="fixed bottom-1/4 -right-32 w-64 h-64 rounded-full blur-[100px]"
-        style={{ background: 'hsl(25 100% 55% / 0.15)' }}
-        animate={{ x: [0, -50, 0], y: [0, -30, 0] }}
-        transition={{ duration: 20, repeat: Infinity, ease: 'easeInOut' }}
-      />
+      {/* Subtle Background Grid */}
+      <div className="fixed inset-0 grid-pattern opacity-30" />
 
       {/* Header */}
       <header className="relative z-10 flex items-center justify-between px-4 py-3 border-b border-border/50 backdrop-blur-sm bg-background/50">
         <div className="flex items-center gap-2">
           <motion.div
-            className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center"
+            className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center"
             whileHover={{ rotate: 15 }}
           >
             <Dices className="w-5 h-5 text-background" />
@@ -330,7 +316,7 @@ export function DiceGame() {
                     }}
                     className={`aspect-square rounded-lg flex items-center justify-center transition-colors ${
                       revealedTiles.has(i)
-                        ? 'bg-gradient-to-br from-primary/40 to-secondary/40 border border-primary/50'
+                        ? 'bg-primary/30 border border-primary/50'
                         : 'bg-muted/30 border border-muted/50'
                     }`}
                   >
@@ -365,12 +351,7 @@ export function DiceGame() {
                 }}
                 whileHover={!isRolling ? { scale: 1.05, rotate: 5 } : {}}
                 onClick={isConnected && !isRolling ? rollDice : undefined}
-                className={`w-32 h-32 md:w-40 md:h-40 rounded-2xl bg-gradient-to-br ${currentFace.color} p-4 cursor-pointer relative shadow-2xl`}
-                style={{
-                  boxShadow: isRolling 
-                    ? '0 0 40px hsl(170 100% 45% / 0.5), 0 0 80px hsl(25 100% 55% / 0.3)'
-                    : '0 0 20px hsl(170 100% 45% / 0.3)',
-                }}
+                className={`w-32 h-32 md:w-40 md:h-40 rounded-2xl ${currentFace.bgClass} p-4 cursor-pointer relative shadow-xl border border-white/10`}
               >
                 {/* Inner dice face */}
                 <div className="w-full h-full bg-background/10 rounded-xl grid grid-cols-3 grid-rows-3 gap-1 p-2">
@@ -396,9 +377,6 @@ export function DiceGame() {
                     })
                   )}
                 </div>
-                
-                {/* Glow effect */}
-                <div className="absolute inset-0 rounded-2xl bg-gradient-to-t from-transparent to-white/10" />
               </motion.div>
             </div>
 
@@ -452,10 +430,7 @@ export function DiceGame() {
                 disabled={isRolling || showWinMessage}
                 whileHover={!isRolling && !showWinMessage ? { scale: 1.02 } : {}}
                 whileTap={!isRolling && !showWinMessage ? { scale: 0.98 } : {}}
-                className="w-full py-4 px-6 bg-gradient-to-r from-primary to-secondary hover:from-primary/90 hover:to-secondary/90 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl font-bold text-lg text-primary-foreground flex items-center justify-center gap-3 transition-all shadow-lg"
-                style={{
-                  boxShadow: !isRolling ? '0 0 30px hsl(170 100% 45% / 0.3)' : 'none',
-                }}
+                className="w-full py-4 px-6 bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl font-bold text-lg text-primary-foreground flex items-center justify-center gap-3 transition-all shadow-lg"
               >
                 {isRolling ? (
                   <>
@@ -471,7 +446,7 @@ export function DiceGame() {
                   <>
                     <Dices className="w-5 h-5" />
                     <span className="font-[var(--font-orbitron)]">Roll Dice</span>
-                    <span className="text-sm opacity-80">(0.01 USDC)</span>
+                    <span className="text-sm opacity-80">(0.00001 USDC)</span>
                   </>
                 )}
               </motion.button>
@@ -506,10 +481,7 @@ export function DiceGame() {
               initial={{ scale: 0.8, y: 50 }}
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.8, y: 50 }}
-              className="glass rounded-3xl p-8 max-w-sm w-full text-center border border-primary/30"
-              style={{
-                boxShadow: '0 0 60px hsl(170 100% 45% / 0.3), 0 0 100px hsl(25 100% 55% / 0.2)',
-              }}
+              className="glass rounded-3xl p-8 max-w-sm w-full text-center border border-primary/30 shadow-xl"
             >
               <motion.div
                 animate={{ rotate: [0, 10, -10, 0], scale: [1, 1.1, 1] }}
@@ -517,7 +489,7 @@ export function DiceGame() {
               >
                 <Trophy className="w-20 h-20 mx-auto mb-4 text-secondary" />
               </motion.div>
-              <h2 className="font-[var(--font-orbitron)] text-3xl font-bold mb-2 neon-text">
+              <h2 className="font-[var(--font-orbitron)] text-3xl font-bold mb-2 text-primary">
                 VICTORY!
               </h2>
               <p className="text-muted-foreground mb-6">
@@ -528,7 +500,7 @@ export function DiceGame() {
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                   onClick={resetGame}
-                  className="flex-1 py-3 px-4 bg-gradient-to-r from-primary to-secondary rounded-xl font-bold text-primary-foreground"
+                  className="flex-1 py-3 px-4 bg-primary hover:bg-primary/90 rounded-xl font-bold text-primary-foreground transition-colors"
                 >
                   Play Again
                 </motion.button>
@@ -561,7 +533,7 @@ export function DiceGame() {
               <ul className="space-y-3 text-sm text-muted-foreground">
                 <li className="flex items-start gap-2">
                   <Dices className="w-4 h-4 mt-0.5 text-primary shrink-0" />
-                  <span>Each roll costs 0.01 USDC</span>
+                  <span>Each roll costs 0.00001 USDC</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <Target className="w-4 h-4 mt-0.5 text-secondary shrink-0" />
