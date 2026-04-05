@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Playfair_Display, Geist_Mono } from "next/font/google";
+import { Space_Grotesk, JetBrains_Mono, Orbitron } from "next/font/google";
 import localFont from "next/font/local";
 import "@coinbase/onchainkit/styles.css";
 import "./globals.css";
@@ -8,16 +8,23 @@ import { cookies } from "next/headers";
 import { ReadyNotifier } from "@/components/ready-notifier";
 import { Providers } from "./providers";
 import FarcasterWrapper from "@/components/FarcasterWrapper";
+import { Toaster } from "sonner";
 
-const playfairDisplay = Playfair_Display({
+const spaceGrotesk = Space_Grotesk({
   subsets: ["latin"],
-  variable: "--font-playfair",
-  weight: ["400", "500", "600", "700", "800", "900"],
+  variable: "--font-space-grotesk",
+  weight: ["400", "500", "600", "700"],
 });
 
-const geistMono = Geist_Mono({
+const jetbrainsMono = JetBrains_Mono({
   subsets: ["latin"],
-  variable: "--font-geist-mono",
+  variable: "--font-jetbrains-mono",
+});
+
+const orbitron = Orbitron({
+  subsets: ["latin"],
+  variable: "--font-orbitron",
+  weight: ["400", "500", "600", "700", "800", "900"],
 });
 
 const geistSans = localFont({
@@ -39,7 +46,7 @@ export default async function RootLayout({
             {requestId && <meta name="x-request-id" content={requestId} />}
           </head>
           <body
-            className={`${playfairDisplay.variable} ${geistSans.variable} ${geistMono.variable} antialiased bg-background`}
+            className={`${spaceGrotesk.variable} ${orbitron.variable} ${jetbrainsMono.variable} ${geistSans.variable} antialiased bg-background`}
           >
             {/* Do not remove this component, we use it to notify the parent that the mini-app is ready */}
             <ReadyNotifier />
@@ -49,14 +56,15 @@ export default async function RootLayout({
       </FarcasterWrapper>
       </Providers>
             <ResponseLogger />
+            <Toaster richColors position="top-center" />
           </body>
         </html>
       );
 }
 
 export const metadata: Metadata = {
-        title: "Dice2D",
-        description: "Roll the dice and watch your garden bloom! Each roll costs 0.00001 USDC on Base.",
+        title: "Dice2D | Roll & Win on Base",
+        description: "The ultimate dice rolling game on Base. Roll 3+ to reveal tiles, complete all 6 to win! Swap ETH for DICE2D tokens.",
         other: { 
           "fc:frame": JSON.stringify({
             "version": "next",

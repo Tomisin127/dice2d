@@ -2,19 +2,50 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useAccount } from 'wagmi';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Sparkles, Trophy, Zap } from 'lucide-react';
+import { useAccount, useSendTransaction } from 'wagmi';
+import { Card, CardContent } from '@/components/ui/card';
+import { Sparkles, Trophy, Zap, Dices, TrendingUp, Target, Volume2, VolumeX, Info } from 'lucide-react';
 import { ConnectWallet } from '@coinbase/onchainkit/wallet';
+import { SwapModal } from './SwapModal';
+import { parseUnits, encodeFunctionData } from 'viem';
+import { base } from 'wagmi/chains';
+import { toast } from 'sonner';
 
 type DiceValue = 1 | 2 | 3 | 4 | 5 | 6;
 
 const PAYMENT_AMOUNT = '0.01';
 const TOTAL_TILES = 6;
 
+// USDC on Base
+const USDC_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' as const;
+const PAYMENT_RECEIVER = '0x742d35Cc6634C0532925a3b844Bc454e4438f44e' as const; // Replace with your address
+
+const ERC20_ABI = [
+  {
+    name: 'transfer',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'to', type: 'address' },
+      { name: 'amount', type: 'uint256' },
+    ],
+    outputs: [{ name: '', type: 'bool' }],
+  },
+] as const;
+
+// Dice face patterns
+const diceFaces: Record<DiceValue, { dots: number[][]; color: string }> = {
+  1: { dots: [[1, 1]], color: 'from-primary to-primary/80' },
+  2: { dots: [[0, 0], [2, 2]], color: 'from-primary/90 to-secondary/80' },
+  3: { dots: [[0, 0], [1, 1], [2, 2]], color: 'from-secondary/90 to-primary/80' },
+  4: { dots: [[0, 0], [0, 2], [2, 0], [2, 2]], color: 'from-secondary to-secondary/80' },
+  5: { dots: [[0, 0], [0, 2], [1, 1], [2, 0], [2, 2]], color: 'from-primary to-secondary' },
+  6: { dots: [[0, 0], [0, 1], [0, 2], [2, 0], [2, 1], [2, 2]], color: 'from-secondary to-primary' },
+};
+
 export function DiceGame() {
   const { address, isConnected } = useAccount();
+  const { sendTransactionAsync } = useSendTransaction();
   const [diceValue, setDiceValue] = useState<DiceValue>(1);
   const [isRolling, setIsRolling] = useState(false);
   const [successfulRolls, setSuccessfulRolls] = useState(0);
@@ -23,58 +54,104 @@ export function DiceGame() {
   const [lastRoll, setLastRoll] = useState<DiceValue | null>(null);
   const [showResult, setShowResult] = useState(false);
   const [showWinMessage, setShowWinMessage] = useState(false);
-  const [paymentError, setPaymentError] = useState<string>('');
+  const [isMuted, setIsMuted] = useState(false);
+  const [streak, setStreak] = useState(0);
+  const [bestStreak, setBestStreak] = useState(0);
+  const [showRules, setShowRules] = useState(false);
 
   const rollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
 
-  const playSound = useCallback((type: 'roll' | 'success' | 'fail') => {
-    // Sound effects would go here
+  // Initialize audio context
+  useEffect(() => {
+    audioContextRef.current = new (window.AudioContext || (window as typeof window & { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+    return () => {
+      audioContextRef.current?.close();
+    };
   }, []);
 
+  const playSound = useCallback((type: 'roll' | 'success' | 'fail' | 'win') => {
+    if (isMuted || !audioContextRef.current) return;
+
+    const ctx = audioContextRef.current;
+    const oscillator = ctx.createOscillator();
+    const gainNode = ctx.createGain();
+
+    oscillator.connect(gainNode);
+    gainNode.connect(ctx.destination);
+
+    switch (type) {
+      case 'roll':
+        oscillator.frequency.setValueAtTime(200, ctx.currentTime);
+        oscillator.frequency.exponentialRampToValueAtTime(400, ctx.currentTime + 0.1);
+        gainNode.gain.setValueAtTime(0.1, ctx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
+        oscillator.start(ctx.currentTime);
+        oscillator.stop(ctx.currentTime + 0.1);
+        break;
+      case 'success':
+        oscillator.frequency.setValueAtTime(523, ctx.currentTime);
+        oscillator.frequency.setValueAtTime(659, ctx.currentTime + 0.1);
+        oscillator.frequency.setValueAtTime(784, ctx.currentTime + 0.2);
+        gainNode.gain.setValueAtTime(0.15, ctx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+        oscillator.start(ctx.currentTime);
+        oscillator.stop(ctx.currentTime + 0.3);
+        break;
+      case 'fail':
+        oscillator.frequency.setValueAtTime(300, ctx.currentTime);
+        oscillator.frequency.exponentialRampToValueAtTime(150, ctx.currentTime + 0.2);
+        gainNode.gain.setValueAtTime(0.1, ctx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2);
+        oscillator.start(ctx.currentTime);
+        oscillator.stop(ctx.currentTime + 0.2);
+        break;
+      case 'win':
+        oscillator.type = 'triangle';
+        oscillator.frequency.setValueAtTime(523, ctx.currentTime);
+        oscillator.frequency.setValueAtTime(659, ctx.currentTime + 0.15);
+        oscillator.frequency.setValueAtTime(784, ctx.currentTime + 0.3);
+        oscillator.frequency.setValueAtTime(1047, ctx.currentTime + 0.45);
+        gainNode.gain.setValueAtTime(0.2, ctx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.6);
+        oscillator.start(ctx.currentTime);
+        oscillator.stop(ctx.currentTime + 0.6);
+        break;
+    }
+  }, [isMuted]);
+
   const rollDice = useCallback(async () => {
-    if (!isConnected || isRolling) return;
+    if (!isConnected || isRolling || !address) return;
 
     setIsRolling(true);
     setShowResult(false);
-    setPaymentError('');
     playSound('roll');
 
     try {
-      console.log('[v0] Starting agentcash payment request');
+      // Send USDC payment
+      const amount = parseUnits(PAYMENT_AMOUNT, 6); // USDC has 6 decimals
       
-      // Use agentcash for payment - user must sign transaction
-      const response = await fetch('/api/agentcash-payment', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          amount: PAYMENT_AMOUNT,
-          userAddress: address,
-          description: 'Dice2D Game Roll - 0.01 USDC',
-        }),
+      const data = encodeFunctionData({
+        abi: ERC20_ABI,
+        functionName: 'transfer',
+        args: [PAYMENT_RECEIVER, amount],
       });
 
-      console.log('[v0] Payment response status:', response.status);
+      await sendTransactionAsync({
+        to: USDC_ADDRESS,
+        data,
+        chainId: base.id,
+      });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        console.log('[v0] Payment failed:', errorData);
-        setPaymentError(errorData.message || 'Payment failed. Please try again.');
-        setIsRolling(false);
-        playSound('fail');
-        return;
-      }
-
-      const paymentData = await response.json();
-      console.log('[v0] Payment successful:', paymentData);
+      toast.success('Payment confirmed! Rolling dice...');
 
       // Payment succeeded, animate dice roll
       let rollCount = 0;
       rollIntervalRef.current = setInterval(() => {
         setDiceValue((Math.floor(Math.random() * 6) + 1) as DiceValue);
+        playSound('roll');
         rollCount++;
-        if (rollCount >= 10) {
+        if (rollCount >= 15) {
           if (rollIntervalRef.current) {
             clearInterval(rollIntervalRef.current);
           }
@@ -86,6 +163,11 @@ export function DiceGame() {
 
           if (finalValue >= 3) {
             setSuccessfulRolls((prev) => prev + 1);
+            setStreak((prev) => {
+              const newStreak = prev + 1;
+              if (newStreak > bestStreak) setBestStreak(newStreak);
+              return newStreak;
+            });
             setRevealedTiles((prevRevealed) => {
               const hiddenTiles = Array.from({ length: TOTAL_TILES }, (_, i) => i).filter(
                 (i) => !prevRevealed.has(i)
@@ -100,6 +182,7 @@ export function DiceGame() {
             });
             playSound('success');
           } else {
+            setStreak(0);
             setRevealedTiles((prevRevealed) => {
               const revealed = Array.from(prevRevealed);
               if (revealed.length > 0) {
@@ -116,242 +199,393 @@ export function DiceGame() {
           setShowResult(true);
           setIsRolling(false);
         }
-      }, 100);
+      }, 80);
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      console.error('[v0] Payment request error:', errorMessage);
-      setPaymentError(`Payment error: ${errorMessage}`);
+      const errorMessage = error instanceof Error ? error.message : 'Transaction failed';
+      console.error('Payment error:', errorMessage);
+      toast.error('Payment failed. Please try again.');
       setIsRolling(false);
-      playSound('fail');
     }
-  }, [isConnected, isRolling, address, playSound]);
+  }, [isConnected, isRolling, address, playSound, sendTransactionAsync, bestStreak]);
 
   useEffect(() => {
     if (revealedTiles.size === TOTAL_TILES && totalRolls > 0) {
       setShowWinMessage(true);
+      playSound('win');
     }
-  }, [revealedTiles, totalRolls]);
+  }, [revealedTiles, totalRolls, playSound]);
 
-  const successRate =
-    totalRolls > 0 ? Math.round((successfulRolls / totalRolls) * 100) : 0;
+  const successRate = totalRolls > 0 ? Math.round((successfulRolls / totalRolls) * 100) : 0;
+  const currentFace = diceFaces[diceValue];
+
+  const resetGame = () => {
+    setShowWinMessage(false);
+    setRevealedTiles(new Set());
+    setSuccessfulRolls(0);
+    setTotalRolls(0);
+    setLastRoll(null);
+    setStreak(0);
+  };
 
   return (
-    <div className="min-h-screen bg-background text-foreground flex flex-col justify-center items-center p-4 md:p-8 relative overflow-hidden">
-      {/* Background decorative elements */}
+    <div className="min-h-screen bg-background text-foreground flex flex-col relative overflow-hidden">
+      {/* Animated Background Grid */}
+      <div className="fixed inset-0 grid-pattern opacity-50" />
+      
+      {/* Ambient Glow Effects */}
       <motion.div
-        className="fixed -top-20 -left-20 w-96 h-96 rounded-full opacity-10 blur-3xl"
-        style={{ background: 'radial-gradient(circle, var(--primary) 0%, transparent 70%)' }}
-        animate={{ x: [0, 30, 0], y: [0, 40, 0] }}
-        transition={{ duration: 20, repeat: Infinity }}
+        className="fixed top-1/4 -left-32 w-64 h-64 rounded-full blur-[100px]"
+        style={{ background: 'hsl(170 100% 45% / 0.15)' }}
+        animate={{ x: [0, 50, 0], y: [0, 30, 0] }}
+        transition={{ duration: 15, repeat: Infinity, ease: 'easeInOut' }}
       />
       <motion.div
-        className="fixed -bottom-20 -right-20 w-96 h-96 rounded-full opacity-10 blur-3xl"
-        style={{ background: 'radial-gradient(circle, var(--secondary) 0%, transparent 70%)' }}
-        animate={{ x: [0, -40, 0], y: [0, -50, 0] }}
-        transition={{ duration: 25, repeat: Infinity }}
+        className="fixed bottom-1/4 -right-32 w-64 h-64 rounded-full blur-[100px]"
+        style={{ background: 'hsl(25 100% 55% / 0.15)' }}
+        animate={{ x: [0, -50, 0], y: [0, -30, 0] }}
+        transition={{ duration: 20, repeat: Infinity, ease: 'easeInOut' }}
       />
 
-      <div className="relative z-10 w-full max-w-2xl">
-        {/* Header */}
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="text-center mb-12"
-        >
-          <h1 className="font-[var(--font-playfair)] text-5xl md:text-7xl font-bold mb-4 text-balance bg-gradient-to-r from-primary via-secondary to-primary bg-clip-text text-transparent">
-            Dice 2D
-          </h1>
-          <p className="text-muted-foreground text-lg font-light tracking-wide">
-            Test your fortune with wallet-signed payments
-          </p>
-        </motion.div>
+      {/* Header */}
+      <header className="relative z-10 flex items-center justify-between px-4 py-3 border-b border-border/50 backdrop-blur-sm bg-background/50">
+        <div className="flex items-center gap-2">
+          <motion.div
+            className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center"
+            whileHover={{ rotate: 15 }}
+          >
+            <Dices className="w-5 h-5 text-background" />
+          </motion.div>
+          <div>
+            <h1 className="font-[var(--font-orbitron)] text-lg font-bold tracking-wider">DICE2D</h1>
+            <p className="text-[10px] text-muted-foreground uppercase tracking-widest">On Base</p>
+          </div>
+        </div>
+        
+        <div className="flex items-center gap-2">
+          <SwapModal />
+          <button
+            onClick={() => setIsMuted(!isMuted)}
+            className="p-2 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors"
+            aria-label={isMuted ? 'Unmute sounds' : 'Mute sounds'}
+          >
+            {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+          </button>
+          <button
+            onClick={() => setShowRules(true)}
+            className="p-2 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors"
+            aria-label="Show rules"
+          >
+            <Info className="w-4 h-4" />
+          </button>
+        </div>
+      </header>
+
+      {/* Main Content */}
+      <main className="relative z-10 flex-1 flex flex-col items-center justify-center px-4 py-6 gap-6">
+        {/* Stats Bar */}
+        <div className="w-full max-w-md grid grid-cols-4 gap-2">
+          {[
+            { label: 'Rolls', value: totalRolls, icon: Dices, color: 'primary' },
+            { label: 'Wins', value: successfulRolls, icon: Trophy, color: 'secondary' },
+            { label: 'Rate', value: `${successRate}%`, icon: TrendingUp, color: 'primary' },
+            { label: 'Streak', value: streak, icon: Zap, color: streak >= 3 ? 'secondary' : 'primary' },
+          ].map((stat, i) => (
+            <motion.div
+              key={stat.label}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.1 }}
+              className="glass rounded-xl p-3 text-center"
+            >
+              <stat.icon className={`w-4 h-4 mx-auto mb-1 text-${stat.color}`} />
+              <div className={`text-lg font-bold font-[var(--font-orbitron)] text-${stat.color}`}>
+                {stat.value}
+              </div>
+              <div className="text-[10px] text-muted-foreground uppercase tracking-wider">
+                {stat.label}
+              </div>
+            </motion.div>
+          ))}
+        </div>
 
         {/* Main Game Card */}
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: 0.2 }}
-          className="mb-8"
-        >
-          <Card className="bg-card/50 backdrop-blur border-primary/20 shadow-2xl overflow-hidden">
-            <CardContent className="p-8 md:p-12">
-              {/* Dice Display */}
-              <motion.div
-                animate={isRolling ? { rotateX: 360, rotateY: 360 } : { rotateX: 0, rotateY: 0 }}
-                transition={{ duration: isRolling ? 0.1 : 0.3 }}
-                className="flex justify-center mb-12"
-              >
-                <motion.div
-                  className="w-32 h-32 md:w-40 md:h-40 bg-gradient-to-br from-primary to-secondary rounded-2xl flex items-center justify-center text-6xl md:text-7xl font-bold text-primary-foreground shadow-lg cursor-pointer"
-                  whileHover={!isRolling ? { scale: 1.05 } : {}}
-                  onClick={rollDice}
-                >
-                  {diceValue}
-                </motion.div>
-              </motion.div>
-
-              {/* Result Message */}
-              <AnimatePresence>
-                {showResult && lastRoll && (
+        <Card className="w-full max-w-md glass border-primary/20 shadow-2xl overflow-hidden">
+          <CardContent className="p-6 md:p-8">
+            {/* Progress Tiles */}
+            <div className="mb-6">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs text-muted-foreground uppercase tracking-wider">Progress</span>
+                <span className="text-xs font-[var(--font-orbitron)] text-primary">
+                  {revealedTiles.size}/{TOTAL_TILES}
+                </span>
+              </div>
+              <div className="grid grid-cols-6 gap-1.5">
+                {Array.from({ length: TOTAL_TILES }).map((_, i) => (
                   <motion.div
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    className={`text-center mb-8 p-4 rounded-lg font-semibold text-lg ${
-                      lastRoll >= 3
-                        ? 'bg-green-500/20 border border-green-500/50 text-green-300'
-                        : 'bg-red-500/20 border border-red-500/50 text-red-300'
+                    key={i}
+                    initial={false}
+                    animate={{
+                      scale: revealedTiles.has(i) ? 1 : 0.9,
+                      opacity: revealedTiles.has(i) ? 1 : 0.3,
+                    }}
+                    className={`aspect-square rounded-lg flex items-center justify-center transition-colors ${
+                      revealedTiles.has(i)
+                        ? 'bg-gradient-to-br from-primary/40 to-secondary/40 border border-primary/50'
+                        : 'bg-muted/30 border border-muted/50'
                     }`}
                   >
-                    {lastRoll >= 3 ? '🎉 Success! Tile revealed!' : '❌ Unlucky! Tile hidden.'}
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              {/* Stats Row */}
-              <div className="grid grid-cols-3 gap-4 mb-8">
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.3 }}
-                  className="bg-muted/30 border border-primary/20 rounded-lg p-4 text-center"
-                >
-                  <div className="text-muted-foreground text-sm font-light mb-2">Total Rolls</div>
-                  <div className="text-3xl font-bold text-primary">{totalRolls}</div>
-                </motion.div>
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.35 }}
-                  className="bg-muted/30 border border-primary/20 rounded-lg p-4 text-center"
-                >
-                  <div className="text-muted-foreground text-sm font-light mb-2">Success Rate</div>
-                  <div className="text-3xl font-bold text-secondary">{successRate}%</div>
-                </motion.div>
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.4 }}
-                  className="bg-muted/30 border border-primary/20 rounded-lg p-4 text-center"
-                >
-                  <div className="text-muted-foreground text-sm font-light mb-2">Tiles Revealed</div>
-                  <div className="text-3xl font-bold text-accent">{revealedTiles.size}/{TOTAL_TILES}</div>
-                </motion.div>
-              </div>
-
-              {/* Tiles Grid */}
-              <div className="mb-8">
-                <div className="grid grid-cols-3 gap-3">
-                  {Array.from({ length: TOTAL_TILES }).map((_, i) => (
-                    <motion.div
-                      key={i}
-                      animate={revealedTiles.has(i) ? { scale: 1, opacity: 1 } : { scale: 0.9, opacity: 0.3 }}
-                      className={`aspect-square rounded-lg border-2 flex items-center justify-center font-bold text-xl transition-all ${
-                        revealedTiles.has(i)
-                          ? 'bg-gradient-to-br from-primary/30 to-secondary/30 border-primary'
-                          : 'bg-muted/20 border-muted'
-                      }`}
-                    >
-                      {revealedTiles.has(i) ? (
-                        <Sparkles className="w-6 h-6 text-primary" />
-                      ) : (
-                        <span className="text-muted-foreground">?</span>
-                      )}
-                    </motion.div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Connection & Roll Section */}
-              {!isConnected ? (
-                <div className="flex justify-center">
-                  <ConnectWallet />
-                </div>
-              ) : (
-                <motion.button
-                  onClick={rollDice}
-                  disabled={isRolling || showWinMessage}
-                  whileHover={!isRolling && !showWinMessage ? { scale: 1.02 } : {}}
-                  whileTap={!isRolling && !showWinMessage ? { scale: 0.98 } : {}}
-                  className="w-full py-4 px-6 bg-gradient-to-r from-primary to-secondary hover:shadow-lg transition-shadow disabled:opacity-50 disabled:cursor-not-allowed rounded-lg font-bold text-lg text-primary-foreground flex items-center justify-center gap-2"
-                >
-                  {isRolling ? (
-                    <>
-                      <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity }}>
-                        <Zap className="w-5 h-5" />
+                    {revealedTiles.has(i) ? (
+                      <motion.div
+                        initial={{ scale: 0, rotate: -180 }}
+                        animate={{ scale: 1, rotate: 0 }}
+                        transition={{ type: 'spring', stiffness: 500 }}
+                      >
+                        <Sparkles className="w-4 h-4 text-primary" />
                       </motion.div>
-                      Processing...
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles className="w-5 h-5" />
-                      Roll Dice (0.01 USDC)
-                    </>
-                  )}
-                </motion.button>
-              )}
+                    ) : (
+                      <Target className="w-3 h-3 text-muted-foreground/50" />
+                    )}
+                  </motion.div>
+                ))}
+              </div>
+            </div>
 
-              {/* Payment Error */}
-              {paymentError && (
-                <motion.p
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="text-red-400 text-sm text-center mt-4"
-                >
-                  {paymentError}
-                </motion.p>
-              )}
-            </CardContent>
-          </Card>
-        </motion.div>
-
-        {/* Win Message */}
-        <AnimatePresence>
-          {showWinMessage && (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.8, y: 50 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.8 }}
-              className="fixed inset-0 z-50 flex items-center justify-center p-4"
-            >
+            {/* Dice Display */}
+            <div className="flex justify-center mb-6">
               <motion.div
-                className="bg-gradient-to-br from-primary/20 to-secondary/20 backdrop-blur-sm rounded-2xl p-8 md:p-12 max-w-md text-center border border-primary/50 shadow-2xl"
-                animate={{ y: [-10, 10, -10] }}
-                transition={{ duration: 3, repeat: Infinity }}
+                animate={isRolling ? { 
+                  rotateX: [0, 360], 
+                  rotateY: [0, 360],
+                  scale: [1, 1.1, 1],
+                } : {}}
+                transition={{ 
+                  duration: isRolling ? 0.15 : 0.3, 
+                  repeat: isRolling ? Infinity : 0,
+                  ease: 'linear',
+                }}
+                whileHover={!isRolling ? { scale: 1.05, rotate: 5 } : {}}
+                onClick={isConnected && !isRolling ? rollDice : undefined}
+                className={`w-32 h-32 md:w-40 md:h-40 rounded-2xl bg-gradient-to-br ${currentFace.color} p-4 cursor-pointer relative shadow-2xl`}
+                style={{
+                  boxShadow: isRolling 
+                    ? '0 0 40px hsl(170 100% 45% / 0.5), 0 0 80px hsl(25 100% 55% / 0.3)'
+                    : '0 0 20px hsl(170 100% 45% / 0.3)',
+                }}
               >
-                <Trophy className="w-16 h-16 mx-auto mb-4 text-primary" />
-                <h2 className="font-[var(--font-playfair)] text-4xl font-bold mb-2 text-primary">Victory!</h2>
-                <p className="text-muted-foreground mb-6">
-                  You&apos;ve revealed all tiles! Completed in {totalRolls} rolls.
-                </p>
-                <Button
-                  onClick={() => {
-                    setShowWinMessage(false);
-                    setRevealedTiles(new Set());
-                    setSuccessfulRolls(0);
-                    setTotalRolls(0);
-                    setLastRoll(null);
-                  }}
-                  className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-bold"
-                >
-                  Play Again
-                </Button>
+                {/* Inner dice face */}
+                <div className="w-full h-full bg-background/10 rounded-xl grid grid-cols-3 grid-rows-3 gap-1 p-2">
+                  {[0, 1, 2].map((row) =>
+                    [0, 1, 2].map((col) => {
+                      const hasDot = currentFace.dots.some(
+                        ([r, c]) => r === row && c === col
+                      );
+                      return (
+                        <div
+                          key={`${row}-${col}`}
+                          className="flex items-center justify-center"
+                        >
+                          {hasDot && (
+                            <motion.div
+                              initial={{ scale: 0 }}
+                              animate={{ scale: 1 }}
+                              className="dice-dot"
+                            />
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+                
+                {/* Glow effect */}
+                <div className="absolute inset-0 rounded-2xl bg-gradient-to-t from-transparent to-white/10" />
               </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+            </div>
+
+            {/* Result Message */}
+            <AnimatePresence mode="wait">
+              {showResult && lastRoll && (
+                <motion.div
+                  initial={{ opacity: 0, y: -20, scale: 0.9 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 20, scale: 0.9 }}
+                  className={`text-center mb-6 p-4 rounded-xl font-semibold ${
+                    lastRoll >= 3
+                      ? 'bg-emerald-500/20 border border-emerald-500/50 text-emerald-400'
+                      : 'bg-red-500/20 border border-red-500/50 text-red-400'
+                  }`}
+                >
+                  <div className="flex items-center justify-center gap-2">
+                    {lastRoll >= 3 ? (
+                      <>
+                        <Sparkles className="w-5 h-5" />
+                        <span>Rolled {lastRoll}! Tile revealed!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Target className="w-5 h-5" />
+                        <span>Rolled {lastRoll}. Tile hidden.</span>
+                      </>
+                    )}
+                  </div>
+                  {streak >= 3 && lastRoll >= 3 && (
+                    <motion.p
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      className="text-xs mt-1 text-secondary"
+                    >
+                      Hot streak: {streak} wins!
+                    </motion.p>
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Action Button */}
+            {!isConnected ? (
+              <div className="flex justify-center">
+                <ConnectWallet />
+              </div>
+            ) : (
+              <motion.button
+                onClick={rollDice}
+                disabled={isRolling || showWinMessage}
+                whileHover={!isRolling && !showWinMessage ? { scale: 1.02 } : {}}
+                whileTap={!isRolling && !showWinMessage ? { scale: 0.98 } : {}}
+                className="w-full py-4 px-6 bg-gradient-to-r from-primary to-secondary hover:from-primary/90 hover:to-secondary/90 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl font-bold text-lg text-primary-foreground flex items-center justify-center gap-3 transition-all shadow-lg"
+                style={{
+                  boxShadow: !isRolling ? '0 0 30px hsl(170 100% 45% / 0.3)' : 'none',
+                }}
+              >
+                {isRolling ? (
+                  <>
+                    <motion.div
+                      animate={{ rotate: 360 }}
+                      transition={{ duration: 0.5, repeat: Infinity, ease: 'linear' }}
+                    >
+                      <Dices className="w-5 h-5" />
+                    </motion.div>
+                    <span className="font-[var(--font-orbitron)]">Rolling...</span>
+                  </>
+                ) : (
+                  <>
+                    <Dices className="w-5 h-5" />
+                    <span className="font-[var(--font-orbitron)]">Roll Dice</span>
+                    <span className="text-sm opacity-80">(0.01 USDC)</span>
+                  </>
+                )}
+              </motion.button>
+            )}
+          </CardContent>
+        </Card>
 
         {/* Footer Info */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
+        <motion.p
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
           transition={{ delay: 0.5 }}
-          className="mt-12 text-center text-muted-foreground text-sm"
+          className="text-center text-muted-foreground text-xs max-w-sm"
         >
-          <p className="mb-2">Each roll costs 0.01 USDC and requires wallet signature</p>
-          <p>Roll 3 or higher to reveal tiles, lower to hide them</p>
-        </motion.div>
-      </div>
+          Roll 3+ to reveal tiles. Complete all 6 to win!
+          {bestStreak > 0 && (
+            <span className="block mt-1 text-secondary">Best streak: {bestStreak}</span>
+          )}
+        </motion.p>
+      </main>
+
+      {/* Win Modal */}
+      <AnimatePresence>
+        {showWinMessage && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-md"
+          >
+            <motion.div
+              initial={{ scale: 0.8, y: 50 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.8, y: 50 }}
+              className="glass rounded-3xl p-8 max-w-sm w-full text-center border border-primary/30"
+              style={{
+                boxShadow: '0 0 60px hsl(170 100% 45% / 0.3), 0 0 100px hsl(25 100% 55% / 0.2)',
+              }}
+            >
+              <motion.div
+                animate={{ rotate: [0, 10, -10, 0], scale: [1, 1.1, 1] }}
+                transition={{ duration: 0.5, repeat: Infinity, repeatDelay: 1 }}
+              >
+                <Trophy className="w-20 h-20 mx-auto mb-4 text-secondary" />
+              </motion.div>
+              <h2 className="font-[var(--font-orbitron)] text-3xl font-bold mb-2 neon-text">
+                VICTORY!
+              </h2>
+              <p className="text-muted-foreground mb-6">
+                All tiles revealed in <span className="text-primary font-bold">{totalRolls}</span> rolls!
+              </p>
+              <div className="flex gap-3">
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={resetGame}
+                  className="flex-1 py-3 px-4 bg-gradient-to-r from-primary to-secondary rounded-xl font-bold text-primary-foreground"
+                >
+                  Play Again
+                </motion.button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Rules Modal */}
+      <AnimatePresence>
+        {showRules && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-md"
+            onClick={() => setShowRules(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="glass rounded-2xl p-6 max-w-sm w-full border border-border"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 className="font-[var(--font-orbitron)] text-xl font-bold mb-4 text-primary">
+                How to Play
+              </h3>
+              <ul className="space-y-3 text-sm text-muted-foreground">
+                <li className="flex items-start gap-2">
+                  <Dices className="w-4 h-4 mt-0.5 text-primary shrink-0" />
+                  <span>Each roll costs 0.01 USDC</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <Target className="w-4 h-4 mt-0.5 text-secondary shrink-0" />
+                  <span>Roll 3 or higher to reveal a tile</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <Sparkles className="w-4 h-4 mt-0.5 text-primary shrink-0" />
+                  <span>Roll 1 or 2 and lose a revealed tile</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <Trophy className="w-4 h-4 mt-0.5 text-secondary shrink-0" />
+                  <span>Reveal all 6 tiles to win!</span>
+                </li>
+              </ul>
+              <button
+                onClick={() => setShowRules(false)}
+                className="w-full mt-6 py-2.5 bg-muted/50 hover:bg-muted/70 rounded-xl font-medium transition-colors"
+              >
+                Got it!
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
