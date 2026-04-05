@@ -33,6 +33,16 @@ const ERC20_ABI = [
   },
 ] as const;
 
+// Reward images revealed on win
+const REWARD_IMAGES = [
+  '/rewards/dice-victory-1.jpg',
+  '/rewards/dice-victory-2.jpg',
+  '/rewards/dice-victory-3.jpg',
+  '/rewards/dice-victory-4.jpg',
+  '/rewards/dice-victory-5.jpg',
+  '/rewards/dice-victory-6.jpg',
+];
+
 // Dice face patterns - solid colors for mature look
 const diceFaces: Record<DiceValue, { dots: number[][]; bgClass: string }> = {
   1: { dots: [[1, 1]], bgClass: 'bg-primary' },
@@ -58,6 +68,7 @@ export function DiceGame() {
   const [streak, setStreak] = useState(0);
   const [bestStreak, setBestStreak] = useState(0);
   const [showRules, setShowRules] = useState(false);
+  const [rewardImage, setRewardImage] = useState<string | null>(null);
 
   const rollIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -145,13 +156,14 @@ export function DiceGame() {
 
       toast.success('Payment confirmed! Rolling dice...');
 
-      // Payment succeeded, animate dice roll
+      // Payment succeeded, animate dice roll with optimized timing
       let rollCount = 0;
+      const maxRolls = 10; // Reduced from 15 for faster response
       rollIntervalRef.current = setInterval(() => {
         setDiceValue((Math.floor(Math.random() * 6) + 1) as DiceValue);
-        playSound('roll');
+        if (rollCount % 3 === 0) playSound('roll'); // Play sound less frequently
         rollCount++;
-        if (rollCount >= 15) {
+        if (rollCount >= maxRolls) {
           if (rollIntervalRef.current) {
             clearInterval(rollIntervalRef.current);
           }
@@ -199,7 +211,7 @@ export function DiceGame() {
           setShowResult(true);
           setIsRolling(false);
         }
-      }, 80);
+      }, 100); // Increased from 80ms to 100ms for smoother performance
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Transaction failed';
       console.error('Payment error:', errorMessage);
@@ -210,6 +222,9 @@ export function DiceGame() {
 
   useEffect(() => {
     if (revealedTiles.size === TOTAL_TILES && totalRolls > 0) {
+      // Select a random reward image
+      const randomImage = REWARD_IMAGES[Math.floor(Math.random() * REWARD_IMAGES.length)];
+      setRewardImage(randomImage);
       setShowWinMessage(true);
       playSound('win');
     }
@@ -220,6 +235,7 @@ export function DiceGame() {
 
   const resetGame = () => {
     setShowWinMessage(false);
+    setRewardImage(null);
     setRevealedTiles(new Set());
     setSuccessfulRolls(0);
     setTotalRolls(0);
@@ -340,18 +356,18 @@ export function DiceGame() {
             <div className="flex justify-center mb-6">
               <motion.div
                 animate={isRolling ? { 
-                  rotateX: [0, 360], 
-                  rotateY: [0, 360],
-                  scale: [1, 1.1, 1],
+                  rotate: [0, 15, -15, 10, -10, 0],
+                  scale: [1, 1.05, 1],
                 } : {}}
                 transition={{ 
-                  duration: isRolling ? 0.15 : 0.3, 
+                  duration: isRolling ? 0.2 : 0.3, 
                   repeat: isRolling ? Infinity : 0,
-                  ease: 'linear',
+                  ease: 'easeInOut',
                 }}
-                whileHover={!isRolling ? { scale: 1.05, rotate: 5 } : {}}
+                whileHover={!isRolling ? { scale: 1.03 } : {}}
                 onClick={isConnected && !isRolling ? rollDice : undefined}
                 className={`w-32 h-32 md:w-40 md:h-40 rounded-2xl ${currentFace.bgClass} p-4 cursor-pointer relative shadow-xl border border-white/10`}
+                style={{ willChange: isRolling ? 'transform' : 'auto' }}
               >
                 {/* Inner dice face */}
                 <div className="w-full h-full bg-background/10 rounded-xl grid grid-cols-3 grid-rows-3 gap-1 p-2">
@@ -481,18 +497,36 @@ export function DiceGame() {
               initial={{ scale: 0.8, y: 50 }}
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.8, y: 50 }}
-              className="glass rounded-3xl p-8 max-w-sm w-full text-center border border-primary/30 shadow-xl"
+              className="glass rounded-3xl p-6 max-w-sm w-full text-center border border-primary/30 shadow-xl overflow-hidden"
             >
-              <motion.div
-                animate={{ rotate: [0, 10, -10, 0], scale: [1, 1.1, 1] }}
-                transition={{ duration: 0.5, repeat: Infinity, repeatDelay: 1 }}
-              >
-                <Trophy className="w-20 h-20 mx-auto mb-4 text-secondary" />
-              </motion.div>
-              <h2 className="font-[var(--font-orbitron)] text-3xl font-bold mb-2 text-primary">
+              {/* Reward Image */}
+              {rewardImage && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ delay: 0.2 }}
+                  className="relative mb-4 rounded-2xl overflow-hidden aspect-square"
+                >
+                  <img 
+                    src={rewardImage} 
+                    alt="Victory Reward" 
+                    className="w-full h-full object-cover"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-background/80 via-transparent to-transparent" />
+                  <motion.div
+                    className="absolute bottom-3 left-1/2 -translate-x-1/2"
+                    animate={{ scale: [1, 1.1, 1] }}
+                    transition={{ duration: 1, repeat: Infinity }}
+                  >
+                    <Trophy className="w-12 h-12 text-secondary drop-shadow-lg" />
+                  </motion.div>
+                </motion.div>
+              )}
+              
+              <h2 className="font-[var(--font-orbitron)] text-2xl font-bold mb-2 text-primary">
                 VICTORY!
               </h2>
-              <p className="text-muted-foreground mb-6">
+              <p className="text-muted-foreground mb-4 text-sm">
                 All tiles revealed in <span className="text-primary font-bold">{totalRolls}</span> rolls!
               </p>
               <div className="flex gap-3">
