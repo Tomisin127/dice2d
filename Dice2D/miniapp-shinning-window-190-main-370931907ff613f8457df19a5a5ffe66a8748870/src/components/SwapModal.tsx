@@ -468,7 +468,7 @@ export function SwapModal({ onSwapSuccess }: SwapModalProps) {
         <motion.button
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
-          className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-primary/20 to-secondary/20 hover:from-primary/30 hover:to-secondary/30 border border-primary/40 rounded-xl text-foreground font-semibold text-sm transition-all"
+          className="flex items-center gap-2 px-4 py-2.5 bg-primary/20 hover:bg-primary/30 border border-primary/40 rounded-xl text-foreground font-semibold text-sm transition-all"
         >
           <Coins className="w-4 h-4 text-primary" />
           <span>Buy $DICE2D</span>
@@ -477,7 +477,7 @@ export function SwapModal({ onSwapSuccess }: SwapModalProps) {
 
       <SheetContent side="bottom" className="bg-card border-t border-primary/30 rounded-t-3xl max-h-[85vh] overflow-y-auto">
         <SheetHeader className="pb-4">
-          <SheetTitle className="text-center text-2xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
+          <SheetTitle className="text-center text-2xl font-bold text-primary">
             Swap Tokens
           </SheetTitle>
         </SheetHeader>
@@ -493,7 +493,7 @@ export function SwapModal({ onSwapSuccess }: SwapModalProps) {
               }}
               className={`flex-1 py-2.5 rounded-lg font-semibold text-sm transition-all ${
                 isBuying
-                  ? 'bg-gradient-to-r from-primary to-primary/80 text-primary-foreground shadow-lg'
+                  ? 'bg-primary text-primary-foreground shadow-lg'
                   : 'text-muted-foreground hover:text-foreground'
               }`}
             >
@@ -507,7 +507,7 @@ export function SwapModal({ onSwapSuccess }: SwapModalProps) {
               }}
               className={`flex-1 py-2.5 rounded-lg font-semibold text-sm transition-all ${
                 !isBuying
-                  ? 'bg-gradient-to-r from-secondary to-secondary/80 text-secondary-foreground shadow-lg'
+                  ? 'bg-secondary text-secondary-foreground shadow-lg'
                   : 'text-muted-foreground hover:text-foreground'
               }`}
             >
@@ -541,7 +541,7 @@ export function SwapModal({ onSwapSuccess }: SwapModalProps) {
                 <div className="flex items-center gap-1.5 bg-muted/30 px-3 py-1.5 rounded-full">
                   <div
                     className={`w-5 h-5 rounded-full ${
-                      isBuying ? 'bg-blue-500' : 'bg-gradient-to-r from-primary to-secondary'
+isBuying ? 'bg-blue-500' : 'bg-primary'
                     }`}
                   />
                   <span className="font-semibold text-sm">{inputSymbol}</span>
@@ -575,7 +575,7 @@ export function SwapModal({ onSwapSuccess }: SwapModalProps) {
               <div className="flex items-center gap-1.5 bg-muted/30 px-3 py-1.5 rounded-full">
                 <div
                   className={`w-5 h-5 rounded-full ${
-                    !isBuying ? 'bg-blue-500' : 'bg-gradient-to-r from-primary to-secondary'
+                    !isBuying ? 'bg-blue-500' : 'bg-primary'
                   }`}
                 />
                 <span className="font-semibold text-sm">{outputSymbol}</span>
@@ -617,7 +617,7 @@ export function SwapModal({ onSwapSuccess }: SwapModalProps) {
             <Button
               onClick={handleApprove}
               disabled={isApproving || isConfirming}
-              className="w-full py-6 text-lg font-bold rounded-xl bg-gradient-to-r from-secondary to-secondary/80 hover:from-secondary/90 hover:to-secondary/70"
+              className="w-full py-6 text-lg font-bold rounded-xl bg-secondary hover:bg-secondary/90"
             >
               {isApproving || isConfirming ? (
                 <>
@@ -638,7 +638,7 @@ export function SwapModal({ onSwapSuccess }: SwapModalProps) {
                 !outputAmount ||
                 hasInsufficientBalance
               }
-              className="w-full py-6 text-lg font-bold rounded-xl bg-gradient-to-r from-primary to-secondary hover:from-primary/90 hover:to-secondary/90"
+              className="w-full py-6 text-lg font-bold rounded-xl bg-primary hover:bg-primary/90"
             >
               {isSwapping || isConfirming ? (
                 <>
